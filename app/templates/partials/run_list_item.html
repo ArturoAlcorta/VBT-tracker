@@ -1,0 +1,19 @@
+<div id="row-{{ run.id }}" class="run-item"
+     hx-get="/runs/{{ run.id }}" hx-target="#run-detail-panel" hx-swap="innerHTML">
+  <div class="run-item-name">{{ run.name }}</div>
+  <div class="run-item-meta">
+    {{ run.exercise or "" }}{% if run.weight %} · {{ run.weight }} kg{% endif %}
+  </div>
+  <div class="run-item-status status-{{ run.status }}" id="status-{{ run.id }}">{{ run.status }}</div>
+</div>
+{% if run.status in ("pending", "processing") %}
+<script>
+  watchRun("{{ run.id }}", function (payload) {
+    var badge = document.getElementById("status-{{ run.id }}");
+    if (badge) badge.textContent = payload.status;
+    if (payload.status === "done" || payload.status === "error") {
+      htmx.ajax("GET", "/runs/{{ run.id }}/row", {target: "#row-{{ run.id }}", swap: "outerHTML"});
+    }
+  });
+</script>
+{% endif %}

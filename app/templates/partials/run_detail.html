@@ -1,0 +1,23 @@
+<div class="run-detail">
+  <h2>{{ run.name }}</h2>
+  <p class="run-detail-meta">
+    {{ run.exercise or "" }}{% if run.weight %} · {{ run.weight }} kg{% endif %}
+    · {{ run.created_at.strftime("%Y-%m-%d %H:%M") }}
+  </p>
+
+  {% if run.status == "done" %}
+    <div id="chart"></div>
+    <script>renderChart("{{ run.id }}");</script>
+  {% elif run.status == "error" %}
+    <p class="status-error">Processing failed for this run — check the worker logs.</p>
+  {% else %}
+    <p class="status-pending">Processing… ({{ run.status }})</p>
+    <script>
+      watchRun("{{ run.id }}", function (payload) {
+        if (payload.status === "done" || payload.status === "error") {
+          htmx.ajax("GET", "/runs/{{ run.id }}", {target: "#run-detail-panel", swap: "innerHTML"});
+        }
+      });
+    </script>
+  {% endif %}
+</div>

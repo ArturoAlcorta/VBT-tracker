@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="upload-bar">
+  <form hx-post="/runs" hx-target="#run-list" hx-swap="afterbegin" hx-encoding="multipart/form-data"
+        hx-on::after-request="this.reset()">
+    <input type="file" name="video" accept="video/*" required>
+    <input type="text" name="name" placeholder="Run name" required>
+    <input type="text" name="exercise" placeholder="Exercise (e.g. squat)">
+    <input type="number" step="0.5" name="weight" placeholder="Weight (kg)">
+    <button type="submit">Analyze</button>
+  </form>
+</header>
+
+<div class="layout">
+  <aside class="run-list-col">
+    <div id="run-list">
+      {% for run in runs %}
+        {% include "partials/run_list_item.html" %}
+      {% endfor %}
+    </div>
+  </aside>
+
+  <main id="run-detail-panel">
+    <p class="empty-state">Upload a video or select a run from the list.</p>
+  </main>
+</div>
+{% endblock %}
