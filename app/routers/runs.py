@@ -106,6 +106,7 @@ def run_chart_data(run_id: uuid.UUID, session: Session = Depends(get_session)):
                 "v_avg": p.v_avg,
                 "v_peak": p.v_peak,
                 "v_sticking": p.v_sticking,
+                "rir": p.rir,
             }
             for p in phases
         ],

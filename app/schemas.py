@@ -25,6 +25,7 @@ class PhaseOut(BaseModel):
     v_avg: float
     v_peak: float
     v_sticking: float | None = None  # solo para el concentrico
+    rir: float | None = None  # RIR estimado, solo para el concentrico
 
 
 class ChartData(BaseModel):

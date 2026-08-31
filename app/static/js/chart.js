@@ -33,6 +33,7 @@ function renderRepTable(containerId, phases) {
         <td class="py-2 px-3 text-gray-300">${con ? fmt(con.v_avg, 2) + " m/s" : "—"}</td>
         <td class="py-2 px-3 text-gray-300">${con ? fmt(con.v_peak, 2) + " m/s" : "—"}</td>
         <td class="py-2 px-3 text-gray-300">${con && con.v_sticking != null ? fmt(con.v_sticking, 2) + " m/s" : "—"}</td>
+        <td class="py-2 px-3 text-gray-300">${con && con.rir != null ? "~" + Math.round(con.rir) : "—"}</td>
       </tr>`;
   }).join("");
 
@@ -47,11 +48,17 @@ function renderRepTable(containerId, phases) {
             <th class="py-2 px-3 font-medium">Avg vel.</th>
             <th class="py-2 px-3 font-medium">Peak vel.</th>
             <th class="py-2 px-3 font-medium">Sticking vel.</th>
+            <th class="py-2 px-3 font-medium">RIR (est.)</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
-    </div>`;
+    </div>
+    <p class="text-gray-600 text-xs mt-2 px-1">
+      RIR estimado a partir de la pérdida de velocidad del sticking point respecto a la 1ª rep
+      (González-Badillo et al., 2017, <em>Int J Sports Med</em> 38(3):217-225) —
+      ecuación validada en press de banca, aproximada para otros ejercicios.
+    </p>`;
 }
 
 async function renderChart(runId, containerId) {
@@ -88,7 +95,8 @@ async function renderChart(runId, containerId) {
   data.phases.forEach((p) => {
     const text = p.phase === "concentric"
       ? `rep ${p.rep} — concentric<br>avg: ${p.v_avg.toFixed(2)} m/s` +
-        (p.v_sticking != null ? `<br>sticking point: ${p.v_sticking.toFixed(2)} m/s` : "")
+        (p.v_sticking != null ? `<br>sticking point: ${p.v_sticking.toFixed(2)} m/s` : "") +
+        (p.rir != null ? `<br>RIR (est.): ~${Math.round(p.rir)}` : "")
       : `rep ${p.rep} — eccentric<br>avg: ${p.v_avg.toFixed(2)} m/s`;
     traces.push({
       x: [p.t0, p.t1, p.t1, p.t0],

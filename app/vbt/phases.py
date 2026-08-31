@@ -17,6 +17,7 @@ threshold doesn't create spurious phases.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 
 import numpy as np
 
@@ -42,6 +43,7 @@ class Phase:
     v_avg: float
     v_peak: float
     v_sticking: float | None  # only set for the concentric phase
+    rir: float | None = None  # estimated reps in reserve, concentric phases only
 
 
 def fill_gaps(y: np.ndarray, max_gap: int) -> np.ndarray:
@@ -152,15 +154,30 @@ def _sticking_point_velocity(vel_px: np.ndarray, m_per_px: float) -> float | Non
     once the lift leaves the bottom, before it accelerates back up.
 
     `_extend_phase` stretches the phase's core into its low-velocity edges, so
-    a plain min() over the whole phase would just return the edge value
-    instead of the true mid-lift sticking point. Trimming the first/last 10%
-    of samples excludes those edges.
+    a plain min() over the whole phase would just return an edge value
+    instead of the true mid-lift sticking point. A *fixed* 10% trim off each
+    end (the original approach) isn't enough to exclude that edge on a rep
+    whose coast into lockout is long and gradual — it silently reports the
+    near-zero velocity right before the disk stops, not a real sticking
+    point. Instead, trim the start (still a fixed 10%, since that edge is
+    short and near-constant) and cut the end at the last point the rep is
+    still moving at >=25% of its peak velocity — everything after that is
+    deceleration into lockout, not a candidate for the sticking point,
+    regardless of how long it drags on for.
     """
-    if len(vel_px) < 5:
+    n = len(vel_px)
+    if n < 5:
         return None
-    trim = max(1, int(0.1 * len(vel_px)))
-    core = vel_px[trim:-trim] if len(vel_px) > 2 * trim else vel_px
-    if not np.isfinite(core).any():
+    peak = np.nanmax(vel_px)
+    if not np.isfinite(peak) or peak <= 0:
+        return None
+    above_threshold = np.flatnonzero(np.isfinite(vel_px) & (vel_px >= 0.25 * peak))
+    if len(above_threshold) == 0:
+        return None
+    start = max(1, int(0.1 * n))
+    end = above_threshold[-1] + 1
+    core = vel_px[start:end]
+    if len(core) == 0 or not np.isfinite(core).any():
         return None
     return float(np.nanmin(core) * m_per_px)
 
@@ -221,4 +238,78 @@ def analyze_phases(
             v_avg=v_avg, v_peak=v_peak, v_sticking=v_sticking,
         ))
 
+    _estimate_rir(phases)
     return height, phases
+
+
+# --- RIR (reps in reserve) estimation ---------------------------------------
+#
+# Fixed velocity -> RIR thresholds: a rep's own absolute velocity maps
+# directly to an RIR estimate, independent of any other rep in the set. We
+# tried comparing each rep to the set's fastest rep instead (see git
+# history), but that reports a high RIR for whichever rep happens to be
+# fastest even when every rep in the set is objectively slow — i.e. it
+# measures relative fatigue within the set, not actual proximity to failure.
+# Fixed thresholds fix that at the cost of needing a per-exercise velocity
+# scale, which for now is bench-press-only (see caveats below).
+#
+# Anchors come from two tables in the same source, same 22-24 man cohort:
+#
+#   González-Badillo JJ, Yañez-García JM, Mora-Custodio R, Rodríguez-Rosell D.
+#   "Velocity Loss as a Variable for Monitoring Resistance Exercise."
+#   Int J Sports Med. 2017;38(3):217-225. doi:10.1055/s-0042-120324
+#
+# 1) %1RM -> first-rep MPV (their %1RM-velocity classification table, from
+#    González-Badillo & Sánchez-Medina 2010): tells us the effective %1RM a
+#    given velocity represents, whatever the actual prescribed load was —
+#    the whole premise of VBT is that velocity reflects current effort
+#    regardless of load.
+# 2) %1RM -> mean reps to failure (their Table 1): at that effective %1RM, a
+#    fresh set would produce N reps; RIR = N - 1 (the current rep is the
+#    first of those N). 100% 1RM is anchored separately using the paper's own
+#    reported failure/1RM MPV (~0.12-0.15 m/s, midpoint 0.135) since Table 1
+#    doesn't include a literal 100% row — by definition 1 rep possible, 0 RIR.
+#
+# We feed each rep's `v_avg` in as the velocity — the closest thing we
+# compute to the paper's MPV (mean *propulsive* velocity, i.e. only the
+# accelerating portion of the concentric phase, acceleration >= -9.81 m/s²).
+# `v_avg` is displacement/duration over the *whole* concentric phase
+# (including the deceleration into lockout, since we don't segment out a
+# propulsive sub-phase), so it runs a bit low relative to true MPV — still
+# a much closer match than the sticking-point velocity we used originally,
+# which the literature doesn't use as a monitoring metric at all (it's a
+# different line of research — locating the weakest point in the strength
+# curve, e.g. Kompf & Arandjelović's sticking-point review — not fatigue/RIR
+# estimation). The whole thing is bench-press-specific (the equivalent
+# squat/deadlift study, Rodríguez-Rosell et al. 2020, J Strength Cond Res
+# 34(9):2537-2547, is paywalled) — applied to every exercise regardless.
+# Treat this as a rough, directional estimate, not a precise figure.
+
+# (velocity m/s, RIR) anchors, fastest to slowest — see derivation above.
+_BP_VELOCITY_RIR_ANCHORS = (
+    (0.93, 24.7), (0.86, 21.7), (0.79, 18.6), (0.71, 15.2),
+    (0.62, 11.6), (0.54, 8.8), (0.47, 6.7), (0.39, 3.9), (0.135, 0.0),
+)
+
+
+def _rir_from_velocity(v: float) -> float:
+    """Piecewise-linear interpolation over `_BP_VELOCITY_RIR_ANCHORS`; clamps
+    to the table's ends rather than extrapolating past them."""
+    anchors = _BP_VELOCITY_RIR_ANCHORS
+    if v >= anchors[0][0]:
+        return anchors[0][1]
+    if v <= anchors[-1][0]:
+        return anchors[-1][1]
+    for (v_hi, rir_hi), (v_lo, rir_lo) in pairwise(anchors):
+        if v_lo <= v <= v_hi:
+            frac = (v - v_lo) / (v_hi - v_lo)
+            return rir_lo + frac * (rir_hi - rir_lo)
+    return anchors[-1][1]  # unreachable
+
+
+def _estimate_rir(phases: list[Phase]) -> None:
+    """Sets `.rir` in place on every concentric phase, from that rep's own
+    mean velocity alone — no comparison to other reps in the set."""
+    for phase in phases:
+        if phase.kind == CONCENTRIC and np.isfinite(phase.v_avg):
+            phase.rir = _rir_from_velocity(phase.v_avg)
