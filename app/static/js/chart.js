@@ -55,7 +55,7 @@ function renderRepTable(containerId, phases) {
       </table>
     </div>
     <p class="text-gray-600 text-xs mt-2 px-1">
-      RIR estimado a partir de la pérdida de velocidad del sticking point respecto a la 1ª rep
+      RIR estimado a partir de la velocidad media de cada repetición, con umbrales fijos
       (González-Badillo et al., 2017, <em>Int J Sports Med</em> 38(3):217-225) —
       ecuación validada en press de banca, aproximada para otros ejercicios.
     </p>`;

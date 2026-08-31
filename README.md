@@ -14,6 +14,7 @@ sensor or linear encoder required.
 - [Training metrics](#training-metrics)
 - [Design choices](#design-choices)
 - [Architecture](#architecture)
+- [Tests](#tests)
 - [Standalone scripts](#standalone-scripts)
 - [License](#license)
 
@@ -84,16 +85,30 @@ Three references if you want the background beyond this README:
 2. **Track** the plate's vertical center and mask diameter across frames
    (`app/vbt/track.py`); the diameter gives a pixel-to-meter scale, since a
    standard olympic plate is a known 45cm across.
-3. **Segment into phases**: a 4-state hysteresis machine turns the normalized
-   height curve into alternating eccentric/concentric phases
-   (`app/vbt/phases.py`), and computes per-phase average velocity, peak
-   velocity, and — for the concentric phase — the **sticking-point velocity**:
-   the last point in the rep still moving at ≥25% of that rep's own peak
-   velocity, i.e. the velocity right before it commits to decelerating into
-   lockout (a fixed edge-trim isn't enough here — a rep with a long, gradual
-   coast into lockout needs more of its tail excluded than a rep that stops
-   sharply, or the near-zero lockout velocity gets reported as if it were a
-   genuine sticking point).
+3. **Segment into phases** (`app/vbt/phases.py`): find the local minima
+   ("bottoms") and maxima ("tops") of the normalized height curve via
+   `scipy.signal.find_peaks`, filtered by a minimum time between reps
+   (`MIN_REP_SECONDS`) and a minimum depth relative to the surrounding
+   extrema (`MIN_PROMINENCE`) so a small wobble at the top of a rep, or
+   sensor noise, doesn't get mistaken for its own rep. Each eccentric phase
+   runs top → bottom, each concentric phase bottom → top. This replaced a
+   4-state hysteresis machine over *fixed* height thresholds (`TOP=0.85` /
+   `BOTTOM=0.15`, see git history): a rep that never reached that specific
+   band — a shallower squat from fatigue, a camera that's drifted closer or
+   further between sets, a lifter starting mid-ROM — could get dropped or
+   misread, since the thresholds encoded no actual biomechanical event.
+   Anchoring on real extrema fixes that: whatever depth a rep actually
+   reaches, its own local min/max is still findable.
+
+   Per-phase average velocity, peak velocity, and — for the concentric
+   phase — **sticking-point velocity** are computed the same way as before:
+   the latter now via the same peak-finder applied to velocity instead of
+   height, so it's a genuine local minimum (a real dip the lift recovers
+   from, not just wherever the phase happens to end). Not every rep has one
+   — a rep that just accelerates once and coasts into lockout, with no
+   mid-lift slowdown-then-push, has no sticking point, and this correctly
+   returns `None` for it instead of forcing a value onto the nearest low
+   point (which is what a fixed-window trim used to do; see git history).
 4. **Estimate RIR**: each concentric rep's mean velocity maps directly to an
    RIR estimate via fixed thresholds — no comparison to other reps in the
    set. (An earlier version compared each rep to the *fastest* rep in the set
@@ -183,6 +198,23 @@ video upload -> FastAPI (POST /runs) -> Celery task -> YOLO tracking + phase ana
 Redis and RabbitMQ are **not** bundled in `docker-compose.yml` — bring your
 own (or use `docker-compose.dev.yml` for local testing, see
 [Quick start](#quick-start)).
+
+## Tests
+
+```bash
+uv pip install -e . --group dev   # main deps + pytest
+pytest
+```
+
+Coverage is limited to `app/vbt/phases.py` (`tests/vbt/test_phases.py`) —
+segmentation, sticking-point detection, and RIR estimation, since those are
+the parts with actual numerical logic to get subtly wrong (and did, twice,
+during development: sticking-point velocity picking up the coast into
+lockout instead of a real dip, and a leading concentric fragment colliding
+with rep 1's number). Runs against both synthetic signals (exact, deterministic
+expectations) and a real recorded `track.csv` fixture (`tests/vbt/fixtures/`,
+checked in) — the two real bugs above only showed up on actual noisy tracking
+data, not clean synthetic ones, so both kinds of test earn their place.
 
 ## Standalone scripts
 

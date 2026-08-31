@@ -10,9 +10,15 @@ mean mask diameter within each phase gives meters-per-pixel for that phase,
 without camera calibration. Doing it per phase (not once per video) absorbs
 apparent-scale changes (the athlete moving closer/further between sets).
 
-Phase segmentation is a 4-state machine over normalized height: up -> going
-down -> down -> going up. Thresholds carry hysteresis, so noise around a
-threshold doesn't create spurious phases.
+Phase segmentation anchors on the local minima/maxima ("bottoms"/"tops") of
+the normalized height curve — via `scipy.signal.find_peaks`, filtered by a
+minimum time between reps and a minimum prominence (depth) — rather than on
+fixed height thresholds. A rep that doesn't reach some universal "top" or
+"bottom" band (shallower squat, athlete starting mid-ROM, camera-to-athlete
+distance drifting between sets) is still a real top/bottom, so it's still
+detected: each eccentric phase runs top -> bottom, each concentric phase
+bottom -> top. A prior version used a 4-state hysteresis machine over fixed
+height thresholds (`TOP`/`BOTTOM`) instead; see git history.
 """
 from __future__ import annotations
 
@@ -20,17 +26,19 @@ from dataclasses import dataclass
 from itertools import pairwise
 
 import numpy as np
+from scipy.signal import find_peaks
 
 DISK_DIAMETER_M = 0.45  # standard olympic plate
 
-UP, DOWN, ECCENTRIC, CONCENTRIC = "up", "down", "eccentric", "concentric"
+ECCENTRIC, CONCENTRIC = "eccentric", "concentric"
+_TOP, _BOTTOM = "top", "bottom"  # extremum kinds (not height thresholds)
 
-TOP = 0.85
-BOTTOM = 0.15
-VEL_FRACTION = 0.10
+SMOOTH_SECONDS = 0.10  # moving-average window, in time rather than frames
+MIN_REP_SECONDS = 0.70  # min spacing between two tops, or two bottoms
+MIN_PROMINENCE = 0.15  # min depth of a rep, relative to the full normalized ROM
 MIN_PHASE_S = 0.15
-SMOOTH_WINDOW = 5
 MAX_GAP_FRAMES = 5
+TRIM_VEL_FRACTION = 0.10  # see _trim_to_motion
 
 
 @dataclass
@@ -82,88 +90,93 @@ def smooth(y: np.ndarray, win: int) -> np.ndarray:
     return out
 
 
-def _state_series(h: np.ndarray, top: float, bottom: float) -> list[str | None]:
-    """4-state machine over normalized height.
+def _find_extrema(h: np.ndarray, kind: str, distance: int, prominence: float) -> np.ndarray:
+    """Indices of local minima (`kind="bottom"`) or maxima (`kind="top"`) in
+    normalized height `h`, via scipy's peak finder.
 
-    In the middle band the state depends on the last extreme visited, which is
-    what gives the hysteresis: without having touched "up" you can't be going
-    down.
+    `find_peaks` can't handle NaN, and long tracking-gap stretches (left NaN
+    by `fill_gaps`) shouldn't be allowed to anchor a rep anyway — they're
+    masked out to a value that can never win against real data, then any
+    "peak" scipy still finds sitting on that masked value is dropped.
     """
-    states: list[str | None] = []
-    last_extreme: str | None = None
-    for v in h:
-        if np.isnan(v):
-            states.append(None)
-            continue
-        if v >= top:
-            last_extreme = UP
-            states.append(UP)
-        elif v <= bottom:
-            last_extreme = DOWN
-            states.append(DOWN)
-        elif last_extreme == UP:
-            states.append("going_down")
-        elif last_extreme == DOWN:
-            states.append("going_up")
-        else:
-            states.append(None)  # we don't know where we came from yet
-    return states
+    valid = np.isfinite(h)
+    if valid.sum() < 3:
+        return np.array([], dtype=int)
+    unfavorable = np.nanmin(h) - 1 if kind == _TOP else np.nanmax(h) + 1
+    signal = np.where(valid, h, unfavorable)
+    if kind == _BOTTOM:
+        signal = -signal
+    peaks, _ = find_peaks(signal, distance=max(1, distance), prominence=prominence)
+    return peaks[valid[peaks]]
 
 
-def _runs_of(states: list[str | None], kind: str) -> list[tuple[int, int]]:
-    """Contiguous stretches [start, end) where the state equals `kind`."""
-    out, i = [], 0
-    while i < len(states):
-        if states[i] != kind:
-            i += 1
-            continue
-        j = i
-        while j < len(states) and states[j] == kind:
-            j += 1
-        out.append((i, j))
-        i = j
-    return out
-
-
-def _extend_phase(v: np.ndarray, i0: int, i1: int, direction: float, alpha: float) -> tuple[int, int]:
-    """Extends a phase outward while the disk keeps moving in the same direction.
-
-    The core of the phase (between thresholds) only covers ~70% of the
-    movement. Extending it by velocity recovers the rest without wandering
-    into the plateau: it stops as soon as motion falls below alpha times the
-    phase's peak or reverses direction, which is exactly the turnaround point.
-    Looking for the plateau's maximum doesn't work: if the athlete sways a bit
-    while standing, the maximum lands far from the real start of the movement.
+def _merged_extrema(height: np.ndarray, distance: int, prominence: float) -> list[tuple[int, str]]:
+    """All tops and bottoms in `height`, time-ordered and guaranteed to
+    alternate. `find_peaks` already keeps same-kind extrema apart via
+    `distance`/`prominence`, but tops and bottoms are found independently of
+    each other, so two of the same kind can still end up adjacent (e.g. a
+    shallow wobble that both qualifies as its own top and doesn't fully
+    separate two bottoms) — when that happens, keep only the more extreme
+    one of the pair rather than emitting two eccentric or two concentric
+    phases in a row.
     """
-    peak = float(np.nanmax(np.abs(v[i0 : i1 + 1])))
+    tops = [(int(i), _TOP) for i in _find_extrema(height, _TOP, distance, prominence)]
+    bottoms = [(int(i), _BOTTOM) for i in _find_extrema(height, _BOTTOM, distance, prominence)]
+    extrema = sorted(tops + bottoms, key=lambda e: e[0])
+
+    merged: list[tuple[int, str]] = []
+    for idx, kind in extrema:
+        if merged and merged[-1][1] == kind:
+            prev_idx, _ = merged[-1]
+            more_extreme = height[idx] < height[prev_idx] if kind == _BOTTOM else height[idx] > height[prev_idx]
+            if more_extreme:
+                merged[-1] = (idx, kind)
+            continue
+        merged.append((idx, kind))
+    return merged
+
+
+def _trim_to_motion(vel_h: np.ndarray, i0: int, i1: int, direction: float, alpha: float) -> tuple[int, int]:
+    """Shrinks `[i0, i1]` inward until velocity (signed, in `direction`)
+    reaches `alpha` times the segment's own peak velocity, on both ends.
+
+    A `top`/`bottom` extremum anchor is a genuine local max/min of *height*
+    by construction, but the lift often doesn't start moving again right
+    away — a brief settle at the top, a moment sitting in the hole — so the
+    first stretch after the anchor (and, symmetrically, the last stretch
+    before the *next* anchor) can be near-motionless. Left untrimmed, that
+    dead time gets counted as part of the phase, and — since the anchor
+    itself doesn't move — a chart of it visibly bleeds into the plateau
+    before the rep. This mirrors the old `_extend_phase`, but shrinks a
+    known-good [i0, i1] inward instead of growing an uncertain one outward.
+    """
+    peak = float(np.nanmax(vel_h[i0 : i1 + 1] * direction))
     if not np.isfinite(peak) or peak <= 0:
         return i0, i1
     threshold = alpha * peak
 
     a = i0
-    while a > 0 and np.isfinite(v[a - 1]) and v[a - 1] * direction >= threshold:
-        a -= 1
+    while a < i1 and (not np.isfinite(vel_h[a]) or vel_h[a] * direction < threshold):
+        a += 1
     b = i1
-    while b < len(v) - 1 and np.isfinite(v[b + 1]) and v[b + 1] * direction >= threshold:
-        b += 1
+    while b > a and (not np.isfinite(vel_h[b]) or vel_h[b] * direction < threshold):
+        b -= 1
     return a, b
 
 
 def _sticking_point_velocity(vel_px: np.ndarray, m_per_px: float) -> float | None:
-    """Velocity at the concentric sticking point: the local velocity minimum
-    once the lift leaves the bottom, before it accelerates back up.
+    """Velocity at the concentric sticking point: a genuine local minimum in
+    bar speed that the lift recovers from afterward, not just wherever
+    velocity happens to be lowest.
 
-    `_extend_phase` stretches the phase's core into its low-velocity edges, so
-    a plain min() over the whole phase would just return an edge value
-    instead of the true mid-lift sticking point. A *fixed* 10% trim off each
-    end (the original approach) isn't enough to exclude that edge on a rep
-    whose coast into lockout is long and gradual — it silently reports the
-    near-zero velocity right before the disk stops, not a real sticking
-    point. Instead, trim the start (still a fixed 10%, since that edge is
-    short and near-constant) and cut the end at the last point the rep is
-    still moving at >=25% of its peak velocity — everything after that is
-    deceleration into lockout, not a candidate for the sticking point,
-    regardless of how long it drags on for.
+    Found via the same peak-finder used for phase segmentation, applied to
+    velocity instead of height: a "trough" is a local minimum with enough
+    prominence (>=15% of the phase's peak velocity) to be a real dip rather
+    than sensor noise. Not every rep has one — a rep that just accelerates
+    once and decelerates into lockout, with no mid-lift slowdown-then-push,
+    genuinely has no sticking point, and this returns None for it rather
+    than forcing a value onto the nearest low point (which used to end up
+    being the coast into lockout for long, gradual reps — see git history).
     """
     n = len(vel_px)
     if n < 5:
@@ -171,15 +184,14 @@ def _sticking_point_velocity(vel_px: np.ndarray, m_per_px: float) -> float | Non
     peak = np.nanmax(vel_px)
     if not np.isfinite(peak) or peak <= 0:
         return None
-    above_threshold = np.flatnonzero(np.isfinite(vel_px) & (vel_px >= 0.25 * peak))
-    if len(above_threshold) == 0:
+    valid = np.isfinite(vel_px)
+    signal = np.where(valid, vel_px, peak + 1)
+    troughs, _ = find_peaks(-signal, prominence=0.15 * peak)
+    troughs = troughs[valid[troughs]]
+    if len(troughs) == 0:
         return None
-    start = max(1, int(0.1 * n))
-    end = above_threshold[-1] + 1
-    core = vel_px[start:end]
-    if len(core) == 0 or not np.isfinite(core).any():
-        return None
-    return float(np.nanmin(core) * m_per_px)
+    deepest = troughs[np.argmin(vel_px[troughs])]
+    return float(vel_px[deepest] * m_per_px)
 
 
 def analyze_phases(
@@ -187,33 +199,40 @@ def analyze_phases(
     center_y: np.ndarray,
     diameter: np.ndarray,
     disk_diameter_m: float = DISK_DIAMETER_M,
-    top: float = TOP,
-    bottom: float = BOTTOM,
-    vel_fraction: float = VEL_FRACTION,
+    smooth_seconds: float = SMOOTH_SECONDS,
+    min_rep_seconds: float = MIN_REP_SECONDS,
+    min_prominence: float = MIN_PROMINENCE,
     min_phase_s: float = MIN_PHASE_S,
-    smooth_window: int = SMOOTH_WINDOW,
     max_gap: int = MAX_GAP_FRAMES,
+    trim_vel_fraction: float = TRIM_VEL_FRACTION,
 ) -> tuple[np.ndarray, list[Phase]]:
     """Returns (normalized height per frame, list of detected phases)."""
     cy_filled = fill_gaps(center_y, max_gap)
+
+    fps = 1.0 / np.median(np.diff(t)) if len(t) > 1 else 30.0
+    smooth_window = max(1, round(smooth_seconds * fps))
     cy_smooth = smooth(cy_filled, smooth_window)
 
     y_min, y_max = np.nanmin(cy_smooth), np.nanmax(cy_smooth)
     height = (y_max - cy_smooth) / ((y_max - y_min) or 1.0)
-
-    states = _state_series(height, top, bottom)
     vel_h = np.gradient(height, t)
 
-    raw_phases: list[tuple[str, int, int]] = []
-    for kind, direction, state_name in ((ECCENTRIC, -1.0, "going_down"), (CONCENTRIC, 1.0, "going_up")):
-        for i0, i1 in _runs_of(states, state_name):
-            a, b = _extend_phase(vel_h, i0, i1 - 1, direction, vel_fraction)
-            raw_phases.append((kind, a, b))
-    raw_phases.sort(key=lambda p: p[1])
+    distance = max(1, round(min_rep_seconds * fps))
+    extrema = _merged_extrema(height, distance, min_prominence)
 
     phases: list[Phase] = []
     rep = 0
-    for kind, i0, i1 in raw_phases:
+    for (i0, kind0), (i1, kind1) in pairwise(extrema):
+        if kind0 == kind1:
+            continue  # shouldn't happen after merging, but stay defensive
+        kind = ECCENTRIC if kind0 == _TOP else CONCENTRIC
+        direction = -1.0 if kind == ECCENTRIC else 1.0
+        i0, i1 = _trim_to_motion(vel_h, i0, i1, direction, trim_vel_fraction)
+        if kind == CONCENTRIC and rep == 0:
+            continue  # concentric before any eccentric: a leading fragment
+            # whose start wasn't captured (recording started mid-ascent) —
+            # not a real rep, and critically not "rep 1" either, or it'd
+            # collide with the rep 1 that's actually about to start
         duration = float(t[i1] - t[i0])
         if duration < min_phase_s:
             continue
@@ -233,7 +252,7 @@ def analyze_phases(
             rep += 1
 
         phases.append(Phase(
-            rep=max(rep, 1), kind=kind,
+            rep=rep, kind=kind,
             t0=float(t[i0]), t1=float(t[i1]), duration=duration,
             v_avg=v_avg, v_peak=v_peak, v_sticking=v_sticking,
         ))
