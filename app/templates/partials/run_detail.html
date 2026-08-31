@@ -1,17 +1,25 @@
 <div class="run-detail">
-  <h2>{{ run.name }}</h2>
-  <p class="run-detail-meta">
-    {{ run.exercise or "" }}{% if run.weight %} · {{ run.weight }} kg{% endif %}
-    · {{ run.created_at.strftime("%Y-%m-%d %H:%M") }}
-  </p>
+  <div class="flex items-center justify-between mb-4">
+    <div class="min-w-0">
+      <h2 class="text-white text-xl font-bold truncate">{{ run.name }}</h2>
+      <p class="text-gray-500 text-xs mt-0.5">
+        {{ run.exercise or "" }}{% if run.weight %} · {{ run.weight }} kg{% endif %}
+        · {{ run.created_at.strftime("%Y-%m-%d %H:%M") }}
+      </p>
+    </div>
+  </div>
 
   {% if run.status == "done" %}
-    <div id="chart"></div>
-    <script>renderChart("{{ run.id }}");</script>
+    <div id="chart-{{ run.id }}" class="chart-container w-full h-[480px] bg-card rounded-xl" data-render-chart="{{ run.id }}"></div>
+    <div id="rep-table-{{ run.id }}" class="mt-6"></div>
   {% elif run.status == "error" %}
-    <p class="status-error">Processing failed for this run — check the worker logs.</p>
+    <p class="text-red-400 text-sm bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
+      Processing failed for this run — check the worker logs.
+    </p>
   {% else %}
-    <p class="status-pending">Processing… ({{ run.status }})</p>
+    <p class="text-yellow-400 text-sm bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-4 py-3">
+      Processing… ({{ run.status }})
+    </p>
     <script>
       watchRun("{{ run.id }}", function (payload) {
         if (payload.status === "done" || payload.status === "error") {
