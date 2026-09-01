@@ -110,7 +110,7 @@ def _find_extrema(h: np.ndarray, kind: str, distance: int, prominence: float) ->
     return peaks[valid[peaks]]
 
 
-def _merged_extrema(height: np.ndarray, distance: int, prominence: float) -> list[tuple[int, str]]:
+def _merged_extrema(height: np.ndarray, vel_h: np.ndarray, distance: int, prominence: float) -> list[tuple[int, str]]:
     """All tops and bottoms in `height`, time-ordered and guaranteed to
     alternate. `find_peaks` already keeps same-kind extrema apart via
     `distance`/`prominence`, but tops and bottoms are found independently of
@@ -133,6 +133,40 @@ def _merged_extrema(height: np.ndarray, distance: int, prominence: float) -> lis
                 merged[-1] = (idx, kind)
             continue
         merged.append((idx, kind))
+
+    # If the recording opens with a bottom and no preceding top, the descent
+    # into it is either (a) real and complete, just missing a top *marker*
+    # that stood out enough (a noisy pre-rep settle near the ceiling, whose
+    # own wobbles keep any single peak's prominence just under threshold —
+    # this happened on real data), or (b) genuinely absent because the
+    # recording starts mid-ascent, already near that bottom, or (c) a slow
+    # pre-set drift (walking into frame, adjusting the bar) that covers
+    # enough height to look like a rep but isn't one — this also happened on
+    # real data. Depth alone (frame 0 well above the bottom) rules out (b)
+    # but not (c); (c) is ruled out by speed: a real rep gets there in
+    # roughly the same time its neighbors take, a slow drift doesn't.
+    # Benchmark against a later confirmed phase's own peak velocity, and
+    # require at least 30% of it — generous, since an unhurried first rep is
+    # still plausible, but 10x-or-more slower than every other rep isn't.
+    # Skip the phase immediately after the ambiguous bottom (transitions[0])
+    # when picking that benchmark: it's the recovery straight out of the
+    # same slow drift this check exists to catch, so it's contaminated by
+    # the same problem and would just rubber-stamp it — this happened on
+    # real data too. The phase after that (transitions[1]) is one full cycle
+    # removed and much more likely to be a genuine rep.
+    if merged and merged[0][1] == _BOTTOM:
+        first_bottom_idx = merged[0][0]
+        if height[0] - height[first_bottom_idx] >= prominence:
+            candidate_peak = float(np.nanmax(-vel_h[: first_bottom_idx + 1]))
+            transitions = list(pairwise(merged))
+            benchmark_peak = None
+            if transitions:
+                (a, ka), (b, _) = transitions[1] if len(transitions) > 1 else transitions[0]
+                direction = -1.0 if ka == _TOP else 1.0
+                benchmark_peak = float(np.nanmax(vel_h[a : b + 1] * direction))
+            if benchmark_peak is None or candidate_peak >= 0.3 * benchmark_peak:
+                merged.insert(0, (0, _TOP))
+
     return merged
 
 
@@ -218,7 +252,7 @@ def analyze_phases(
     vel_h = np.gradient(height, t)
 
     distance = max(1, round(min_rep_seconds * fps))
-    extrema = _merged_extrema(height, distance, min_prominence)
+    extrema = _merged_extrema(height, vel_h, distance, min_prominence)
 
     phases: list[Phase] = []
     rep = 0
