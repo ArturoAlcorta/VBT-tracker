@@ -15,6 +15,7 @@ sensor or linear encoder required.
 - [Design choices](#design-choices)
 - [Architecture](#architecture)
 - [Standalone scripts](#standalone-scripts)
+- [Future improvements](#future-improvements)
 - [License](#license)
 
 ## Motivation
@@ -80,7 +81,14 @@ Three references if you want the background beyond this README:
 ## How it works
 
 1. **Detect** the plate in each video frame with a YOLO segmentation model
-   (single class: `Disk`).
+   (single class: `Disk`), `yolo_batch_size` (default 8) frames per forward
+   pass. Ultralytics' own default batch size is 16, but that doesn't apply
+   here — a video `source` under `stream=True` silently runs at batch=1
+   unless `batch` is passed explicitly, one frame per forward pass. Verified
+   the detections come back bit-for-bit identical either way (tracking is
+   still applied per frame, in order — batching only changes how the
+   network's forward pass is scheduled); ~17% faster on a GPU (RTX 3070),
+   a smaller but real gain on CPU too.
 2. **Track** the plate's vertical center and mask diameter across frames
    (`app/vbt/track.py`); the diameter gives a pixel-to-meter scale, since a
    standard olympic plate is a known 45cm across.
@@ -199,6 +207,25 @@ app:
 Each has its own `--help`. `setup.sh` creates a local virtualenv for these
 scripts (`ultralytics` and its dependencies only — no FastAPI/Celery needed
 here).
+
+## Future improvements
+
+- **Keypoint model instead of segmentation.** Train a pose/keypoint model to
+  detect the disk's top edge, bottom edge, and center directly, rather than
+  a segmentation mask post-processed into a centroid + equivalent-circle
+  diameter. Top-to-bottom distance would give the pixel diameter straight
+  from two points instead of going through mask area, and the center
+  keypoint wouldn't need a moments computation over a polygon — both should
+  be more stable under motion blur or a partially-occluded disk, where a
+  segmentation mask's edges are the first thing to degrade. The tradeoff is
+  labeling cost: annotating keypoints is considerably more manual than the
+  current SAM-assisted segmentation workflow (see [Dataset](#dataset)), SAM
+  doesn't produce keypoints for you the way it does masks. Worth it if the
+  current mask-based tracking turns out to be the accuracy ceiling once this
+  project is validated against a real linear encoder (see
+  [Motivation](#motivation)) — since we already know the disk's true
+  diameter (45cm, fixed), keypoints that pin down its extent directly could
+  plausibly do better than reconstructing it from a mask's area.
 
 ## License
 
