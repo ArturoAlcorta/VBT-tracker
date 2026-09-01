@@ -34,6 +34,7 @@ def track_disk(
     conf: float,
     device: str,
     min_circularity: float = 0.5,
+    batch_size: int = 8,
 ) -> TrackResult:
     from ultralytics import YOLO
 
@@ -45,9 +46,18 @@ def track_disk(
     # the one2one (NMS-free) head spreads confidence across neighboring anchors
     # and drops frames below threshold; one2many + NMS gives ~0.96 conf, 1 det/frame
     model.model.model[-1].end2end = False
+    # Ultralytics' own default batch size is 16, but that default doesn't
+    # apply here: a video `source` under stream=True silently runs at
+    # batch=1 unless `batch` is passed explicitly (confirmed by inspecting
+    # model.predictor.dataset.bs) — one frame per forward pass, leaving
+    # throughput on the table for no reason. Passing it explicitly groups
+    # `batch_size` frames per forward pass; detections come back bit-for-bit
+    # identical to batch=1 (verified), since tracking/postprocessing is
+    # still applied per frame in order — batching only changes how the
+    # network's forward pass is scheduled, not the results.
     results = model.track(
         source=str(video_path), stream=True, conf=conf,
-        device=device, verbose=False, persist=True,
+        device=device, verbose=False, persist=True, batch=batch_size,
     )
 
     center_y: list[float] = []

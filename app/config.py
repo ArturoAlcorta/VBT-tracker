@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     device: str = "cpu"
     conf_threshold: float = 0.4
     disk_diameter_m: float = 0.45
+    # frames per forward pass during YOLO inference; 1 (the ultralytics
+    # default for a video `source` under stream=True) leaves throughput on
+    # the table for no accuracy cost — verified bit-identical detections at
+    # batch=1 vs 8 on a real video, ~17% faster on GPU, a smaller but real
+    # gain on CPU too. 8 was the sweet spot for this model; 16 didn't help
+    # further on the one GPU (RTX 3070) this was benchmarked on.
+    yolo_batch_size: int = 8
 
     data_dir: Path = PROJECT_DIR / "data"
 

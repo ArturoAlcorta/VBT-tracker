@@ -37,7 +37,10 @@ def process_video(self, run_id: str) -> None:
 
     try:
         publish_event(rid, {"stage": "tracking", "status": "processing"})
-        result = track_disk(video_path, settings.model_weights, settings.conf_threshold, settings.device)
+        result = track_disk(
+            video_path, settings.model_weights, settings.conf_threshold, settings.device,
+            batch_size=settings.yolo_batch_size,
+        )
         write_track_csv(run_dir / "track.csv", result)
 
         publish_event(rid, {"stage": "phases", "status": "processing"})

@@ -40,6 +40,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-circ", type=float, default=0.5,
                         help="Circularidad mínima de la máscara para aceptarla (0-1).")
     parser.add_argument("--device", default="0", help="'0' GPU, 'cpu' CPU.")
+    parser.add_argument("--batch", type=int, default=8,
+                         help="Frames por pasada de inferencia (un source de vídeo con stream=True "
+                              "corre a batch=1 salvo que se indique explícitamente).")
     parser.add_argument("--outdir", default=str(DEFAULT_OUTDIR), help="Carpeta de salida.")
     parser.add_argument("--save-misses", action="store_true",
                         help="Guarda como imagen los frames donde no se detectó disco.")
@@ -67,7 +70,7 @@ def analyze(args: argparse.Namespace) -> None:
     model.model.model[-1].end2end = False
     results = model.track(
         source=str(source), stream=True, conf=args.conf,
-        device=args.device, verbose=False, persist=True,
+        device=args.device, verbose=False, persist=True, batch=args.batch,
     )
 
     center_y: list[float] = []    # y del centro (px, origen arriba); NaN si no hay
