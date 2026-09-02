@@ -238,8 +238,22 @@ def analyze_phases(
             v_avg=v_avg, v_peak=v_peak, v_sticking=v_sticking,
         ))
 
+    phases = _drop_incomplete_reps(phases)
     _estimate_rir(phases)
     return height, phases
+
+
+def _drop_incomplete_reps(phases: list[Phase]) -> list[Phase]:
+    """Drops any rep that doesn't have both an eccentric and a concentric
+    phase — typically the last rep in the video, cut off mid-ascent before
+    a concentric phase could be detected (rarer: a leading fragment cut off
+    mid-descent). Real data, but useless shown as half a rep, and it was
+    confusing rendered as a row with dashes for the missing half."""
+    kinds_by_rep: dict[int, set[str]] = {}
+    for p in phases:
+        kinds_by_rep.setdefault(p.rep, set()).add(p.kind)
+    complete_reps = {rep for rep, kinds in kinds_by_rep.items() if {ECCENTRIC, CONCENTRIC} <= kinds}
+    return [p for p in phases if p.rep in complete_reps]
 
 
 # --- RIR (reps in reserve) estimation ---------------------------------------
