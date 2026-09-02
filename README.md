@@ -1,8 +1,19 @@
 # vbt-tracker
 
+![vbt-tracker](imgs/vbt-tracker-img.png)
+
 Velocity-based training (VBT) from a phone video: point a camera at a weight
 plate, upload the clip, get bar-path velocity per repetition — no wearable
 sensor or linear encoder required.
+
+> [!WARNING]
+> Built for **power/explosiveness-oriented training** — sets where every rep
+> is moved as fast as intent allows, so bar speed is a meaningful signal of
+> effort and fatigue. It is **not** meant for **hypertrophy training**: on
+> volume-accumulation sets taken close to failure at a deliberately
+> controlled (non-maximal) speed, velocity loss doesn't track effort the
+> same way, and the [RIR estimate](#how-it-works) — calibrated against
+> maximal-intent reps — will read misleadingly high.
 
 ## Index
 
