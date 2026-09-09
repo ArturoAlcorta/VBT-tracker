@@ -40,11 +40,11 @@ def process_video(self, run_id: str) -> None:
         result = track_disk(
             video_path, settings.model_weights, settings.conf_threshold, settings.device,
             batch_size=settings.yolo_batch_size,
-        )
+        ) # result es un objeto TrackResult con fps, tiempo, center_y (array por frame) y diameter (array por frame)
         write_track_csv(run_dir / "track.csv", result)
 
         publish_event(rid, {"stage": "phases", "status": "processing"})
-        height, phases = analyze_phases(result.t, result.center_y, result.diameter, settings.disk_diameter_m)
+        height, phases = analyze_phases(result.t, result.center_y, result.diameter, settings.disk_diameter_m) # Height es un array con la altura normalizada de cada frame, phases es una lista de objetos Phase con info de cada fase (incluida velocidad media)
         save_phases_plot(run_dir / "phases.png", result.t, height, phases, run_name)
 
         _set_status(rid, "done")
