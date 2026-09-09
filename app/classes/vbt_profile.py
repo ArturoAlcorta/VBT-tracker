@@ -184,11 +184,13 @@ class VBTProfile:
         last_rep_speed = phases[-1].v_avg
 
         thresholds = ExerciseProfile.from_key(self.exercise_name).thresholds
+        min_global = thresholds[0]["min_speed"] # Para detectar si una repeticion la mide debajo del treshold
+
+        if last_rep_speed < min_global:
+            return 0
 
         for t in thresholds:
-            if t["min_speed"] < last_rep_speed < t["max_speed"]:
+            if t["min_speed"] <= last_rep_speed < t["max_speed"]:
                 return t["RIR"]
-            else:
-                pass
-
-        return 10
+        # Si no entra en los intervalos definidos ponemos RIR 10 para indicar que esta lejos del fallo, valor simbolico mas que util    
+        return 10 
