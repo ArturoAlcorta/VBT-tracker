@@ -9,6 +9,7 @@ from app.pubsub import publish_event
 from app.vbt.phases import analyze_phases
 from app.vbt.plotting import save_phases_plot
 from app.vbt.track import track_disk, write_track_csv
+from app.classes.vbt_profile import VBTProfile
 
 
 def _set_status(run_id: uuid.UUID, status: str) -> None:
@@ -34,6 +35,8 @@ def process_video(self, run_id: str) -> None:
         session.commit()
         video_path = settings.uploads_dir / run.video_filename
         run_name = run.name
+        exercise_name = run.exercise
+        profile_used = run.profile_used
 
     try:
         publish_event(rid, {"stage": "tracking", "status": "processing"})
@@ -46,6 +49,19 @@ def process_video(self, run_id: str) -> None:
         publish_event(rid, {"stage": "phases", "status": "processing"})
         height, phases = analyze_phases(result.t, result.center_y, result.diameter, settings.disk_diameter_m)
         save_phases_plot(run_dir / "phases.png", result.t, height, phases, run_name)
+
+        phases.sort(key=lambda x: x.v_avg, reverse=True)
+        fastest_rep = {"speed": phases[0].v_avg,
+                       "weight": phases[0].weight}
+
+        if profile_used:
+            calculated_1rm = VBTProfile.load_profile_from_file(exercise_name).calculate_daily_1rm(fastest_rep)
+            # TODO: GUARDAR ESTE DATO EN LA BASE DE DATOS
+
+            #Calculamos el RIR
+            calculated_rir = VBTProfile.load_profile_from_file(exercise_name).calculate_rir(phases)
+            # TODO: LO MISMO QUE EL 1RM
+
 
         _set_status(rid, "done")
         publish_event(rid, {"stage": "done", "status": "done", "reps": max((p.rep for p in phases), default=0)})
