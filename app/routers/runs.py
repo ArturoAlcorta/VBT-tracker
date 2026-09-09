@@ -1,4 +1,5 @@
 import csv
+import os
 import uuid
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.classes.vbt_profile import VBTProfile
 from app.config import settings
 from app.db import get_session
 from app.models import Run
@@ -39,8 +41,12 @@ def create_run(
     name: str = Form(...),
     exercise: str | None = Form(None),
     weight: float | None = Form(None),
+    use_profile: bool = Form(True),
     session: Session = Depends(get_session),
 ):
+    if use_profile and not VBTProfile.load_profile_from_file(exercise):
+        return "MENSAJE DE ERROR DICIENDO QUE NO TIENE PERFIL, QUE LO CREE O QUITE EL CHECK DE USAR PERFIL"
+    
     run_id = uuid.uuid4()
     suffix = Path(video.filename or "video.mp4").suffix or ".mp4"
     video_filename = f"{run_id}{suffix}"
@@ -49,7 +55,7 @@ def create_run(
         fh.write(video.file.read())
 
     run = Run(id=run_id, name=name, exercise=exercise, weight=weight,
-               status="pending", video_filename=video_filename)
+               status="pending", video_filename=video_filename, profile_used=use_profile)
     session.add(run)
     session.commit()
     session.refresh(run)
@@ -111,3 +117,38 @@ def run_chart_data(run_id: uuid.UUID, session: Session = Depends(get_session)):
             for p in phases
         ],
     }
+
+@router.get("/profile/create_profile")
+async def create_profile_modal():
+    # TODO: Crear el model de crear perfil
+    return "modal para crear perfil, donde se seleccione el ejercicio, y por cada video que a;adas tengas que a;adir un peso"
+
+
+@router.post("/profile/{exercise_name}")
+def create_profile(
+    exercise_name: str,
+    videos: list[UploadFile],
+    weights: list[float]
+):
+    """
+    Cargamos los videos para el perfil, los guardamos, y llamamos al perfil con la funcion de creacion desde videos
+    """
+
+    video_list = []
+
+    for i, video in enumerate(videos):
+
+        video_filename = f"profile_video_{i}"
+        video_path = Path(os.getenv("BASE_PROFILE_PATH")) / exercise_name / video_filename
+        with open(video_path, "wb") as fh:
+            fh.write(video.file.read())
+
+        video_list.append((video_path, weights[i]))
+
+    
+    _ = VBTProfile.from_videos(exercise_name, video_list)
+
+    # TODO: crear el template de jinja para mostrar un pop up de perfil creado
+    return "Profile created"
+
+
