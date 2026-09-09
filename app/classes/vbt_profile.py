@@ -135,7 +135,7 @@ class VBTProfile:
         # Guardamos m y b
         return lr_model.coef_[0], lr_model.intercept_ # coef_ es la pendiente, hay que poner el indice porque devuelve un array en caso de que haya varias features, e intercept_ es el punto en el que cruza x=0
 
-    def calculate_daily_1rm(self, video: list[tuple[str, float]]):
+    def calculate_daily_1rm(self, phases: list):
         """
         Para calcular tu 1rm de hoy hay que hacer lo siguiente:
 
@@ -146,8 +146,10 @@ class VBTProfile:
 
         Tu 1rm de hoy es 1rm supuesto * ratio de velocidades
         """
+        phases.sort(key=lambda x: x.v_avg, reverse=True)
 
-        fastest_rep = self.process_videos(video)[0]
+        fastest_rep = {"speed": phases[0].v_avg,
+                        "weight": phases[0].weight}
 
         v_modeled = self.m * fastest_rep["weight"] + self.b
 
@@ -161,7 +163,7 @@ class VBTProfile:
 
         return expected_1rm * v_ratio
 
-    def calculate_rir(self, video_path: str):
+    def calculate_rir(self, phases: dict):
         """
         DOS FORMAS DE CALCULAR EL RIR - AMBAS BIEN SENCILLAS:
 
@@ -178,12 +180,6 @@ class VBTProfile:
         Hay una tercera forma que es con el minimum velocity threshold, tiene el mismo problema que el metodo 1
         Muy especifico de ejercicio y dificil de a;adir nuevos ejercicios.
         """
-        # Primero procesamos el video, obteniendo la velocidad de cada repe
-        result = track_disk(
-                            Path(video_path), settings.model_weights, settings.conf_threshold, settings.device,
-                            batch_size=settings.yolo_batch_size,
-                        )
-        _, phases = analyze_phases(result.t, result.center_y, result.diameter, settings.disk_diameter_m)
 
         last_rep_speed = phases[-1].v_avg
 
