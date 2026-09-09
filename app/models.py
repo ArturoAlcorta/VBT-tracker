@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, String, func
+from sqlalchemy import DateTime, Float, String, func, Bool
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -19,4 +19,6 @@ class Run(Base):
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
     celery_task_id: Mapped[str | None] = mapped_column(String, nullable=True)
     video_filename: Mapped[str] = mapped_column(String, nullable=False)
+    profile_used: Mapped[bool] = mapped_column(Bool, nullable=True)
+    calculated_1rm: Mapped[float] = mapped_column(Bool, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
