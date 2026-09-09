@@ -73,8 +73,12 @@ class VBTProfile:
         # Obtenemos el path del perfil de la clase
         profile_path = ExerciseProfile.from_key(exercise_name).filepath
 
-        #abrir con json 
-        data = json.loads(profile_path.read_text())
+        try:
+            #abrir con json 
+            data = json.loads(profile_path.read_text())
+        except Exception as e:
+            print(f"Error cargando el perfil para el ejercicio {exercise_name}: {e}")
+            raise Exception
 
         return cls(data["m"], data["b"]) # Necesitamos un metodo para inciar la clase usando m y b
 
