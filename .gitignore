@@ -12,3 +12,5 @@ data/runs/*
 .pytest_cache/
 
 .claude/
+
+docker-compose.yaml
