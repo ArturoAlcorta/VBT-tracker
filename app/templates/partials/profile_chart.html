@@ -1,0 +1,16 @@
+{# Fragmento para #profile-chart del modal: la gráfica del perfil guardado.
+   El PNG va incrustado como data URI, así que no se cachea por URL y siempre
+   refleja el perfil que hay ahora mismo en disco. #}
+{% if chart_b64 %}
+  <img src="data:image/png;base64,{{ chart_b64 }}"
+       alt="Load–velocity profile for {{ exercise.value }}"
+       class="w-full rounded-lg border border-gray-700">
+{% elif exercise %}
+  <p class="text-gray-500 text-xs bg-dark border border-gray-700 rounded-lg px-4 py-3">
+    No profile saved for {{ exercise.value }} yet — build one below.
+  </p>
+{% else %}
+  <p class="text-gray-500 text-xs bg-dark border border-gray-700 rounded-lg px-4 py-3">
+    Pick an exercise to see its saved profile.
+  </p>
+{% endif %}

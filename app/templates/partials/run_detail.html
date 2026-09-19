@@ -9,6 +9,23 @@
     </div>
   </div>
 
+  {% if run.profile_used %}
+    <div class="flex flex-wrap gap-3 mb-4">
+      <div class="bg-dark border border-gray-700 rounded-xl px-4 py-2.5">
+        <p class="text-gray-500 text-[11px] uppercase tracking-wide">Daily 1RM</p>
+        <p class="text-white text-lg font-bold leading-tight">
+          {% if run.calculated_1rm %}{{ "%.1f"|format(run.calculated_1rm) }} kg{% else %}—{% endif %}
+        </p>
+      </div>
+      <div class="bg-dark border border-gray-700 rounded-xl px-4 py-2.5">
+        <p class="text-gray-500 text-[11px] uppercase tracking-wide">RIR, last rep</p>
+        <p class="text-white text-lg font-bold leading-tight">
+          {% if run.final_rep_rir is not none %}~{{ run.final_rep_rir }}{% else %}—{% endif %}
+        </p>
+      </div>
+    </div>
+  {% endif %}
+
   {% if run.status == "done" %}
     <div id="chart-{{ run.id }}" class="chart-container w-full h-[480px] bg-card rounded-xl" data-render-chart="{{ run.id }}"></div>
     <div id="rep-table-{{ run.id }}" class="mt-6"></div>

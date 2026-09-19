@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.classes.vbt_profile import ExerciseProfile
 from app.db import get_session, init_db
 from app.models import Run
 from app.routers import events, runs
@@ -25,4 +26,5 @@ def on_startup() -> None:
 @app.get("/")
 def index(request: Request, session: Session = Depends(get_session)):
     all_runs = session.scalars(select(Run).order_by(Run.created_at.desc())).all()
-    return templates.TemplateResponse(request, "index.html", {"runs": all_runs})
+    return templates.TemplateResponse(request, "index.html",
+                                      {"runs": all_runs, "exercises": list(ExerciseProfile)})
