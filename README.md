@@ -1,6 +1,6 @@
 # vbt-tracker
 
-![vbt-tracker](imgs/vbt-tracker-img.png)
+![vbt-tracker](imgs/main-page.png)
 
 Velocity-based training (VBT) from a phone video: point a camera at a weight
 plate, upload the clip, get bar-path velocity per repetition — no wearable
@@ -19,9 +19,9 @@ sensor or linear encoder required.
 
 - [Motivation](#motivation)
 - [Quick start](#quick-start)
-- [Interface](#interface)
 - [Velocity-based training](#velocity-based-training)
 - [How it works](#how-it-works)
+- [Personal profile](#personal-profile)
 - [Dataset](#dataset)
 - [Training metrics](#training-metrics)
 - [Design choices](#design-choices)
@@ -69,24 +69,6 @@ status update live while it processes. By default the worker runs on CPU
 (`DEVICE=cpu`); set `DEVICE=0` in `.env` (and uncomment the GPU block in
 `docker-compose.yml`) if you have an NVIDIA GPU with the
 `nvidia-container-toolkit` installed.
-
-## Interface
-
-Upload a clip, name the run, pick the exercise and the weight. The run panel
-plots the plate's normalized height over time with every phase shaded
-(red: eccentric, green: concentric) and breaks each rep down in the table
-below. When the exercise has a velocity profile saved, the two tiles on top
-show the estimated **daily 1RM** and the **RIR of the last rep**.
-
-![Main page](imgs/main-page.png)
-
-The *Profile* button opens the velocity profile of the exercise selected in
-the form: the sets it was measured from, the exercise's cutoff speed, and the
-1RM where the load-velocity line crosses it. The same modal builds or replaces
-that profile — one video per set, each with its own weight, at least two
-clearly different loads.
-
-![Velocity profile](imgs/profile-modal.png)
 
 ## Velocity-based training
 
@@ -162,6 +144,39 @@ Three references if you want the background beyond this README:
 5. **Show it**: an interactive chart (hover a phase to see its numbers) plus a
    per-rep table (duration, velocities, estimated RIR) and a saved PNG
    snapshot per run.
+
+## Personal profile
+
+The RIR thresholds above are generic. A **personal load-velocity profile**
+makes the numbers yours: record one video per set at two or more clearly
+different weights (three or four spread across your working range is better),
+and the fastest **concentric** rep of each becomes a point of a linear fit
+`v = m·kg + b`. Where that line crosses the exercise's cutoff speed — the
+velocity at which a rep is, by definition, a maximal single — is your
+estimated 1RM.
+
+![Velocity profile](imgs/profile-modal.png)
+
+The *Profile* button in the main form opens this modal for the exercise
+selected there: it shows the saved profile and builds or replaces it. With
+one saved, every run on that exercise gets two extra tiles on top of the run
+panel:
+
+- **Daily 1RM** — the run's fastest concentric rep against the velocity the
+  profile predicts for that weight; the ratio scales the profile's 1RM up or
+  down to what you actually have today.
+- **RIR, last rep** — the last concentric rep's mean velocity read against
+  the exercise's threshold table (`${BASE_THRESHOLD_PATH}/{exercise}.json`),
+  independent of the per-rep estimate in the run table.
+
+Only concentric phases feed any of this: on a heavy set the descent is faster
+than the ascent, so letting an eccentric phase in flattens the line and
+inflates the 1RM.
+
+Profiles are stored as `m`, `b` and the measured points in
+`${BASE_PROFILE_PATH}/{exercise}.json` — the chart plots the points the line
+was actually fitted to, so a bad fit is visible instead of hiding behind a
+plausible-looking slope.
 
 ## Dataset
 
