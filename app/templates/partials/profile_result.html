@@ -1,0 +1,7 @@
+{# Respuesta de POST /profile/{exercise}: el target del form es
+   #profile-modal-container, así que el modal se cierra salvo que haya fallado
+   algo, en cuyo caso se vuelve a pintar para reintentar. #}
+{% include "partials/toast_oob.html" %}
+{% if kind != 'success' %}
+  {% include "partials/profile_modal.html" %}
+{% endif %}

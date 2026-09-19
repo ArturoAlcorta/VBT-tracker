@@ -1,0 +1,9 @@
+{# <select> de ejercicio compartido por el formulario de análisis y el modal de
+   perfil. El value es ExerciseProfile.value, que es lo que valida FastAPI. #}
+<select name="exercise" required{% if select_id %} id="{{ select_id }}"{% endif %}
+        class="w-full bg-dark border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors cursor-pointer">
+  <option value="" disabled {% if not selected %}selected{% endif %}>Exercise…</option>
+  {% for ex in exercises %}
+    <option value="{{ ex.value }}" {% if selected and selected.value == ex.value %}selected{% endif %}>{{ ex.value }}</option>
+  {% endfor %}
+</select>

@@ -2,17 +2,42 @@
 {% block content %}
 <div class="max-w-7xl mx-auto px-6 py-6">
 
+  {# El form se vacía al oír vbt-run-created (cabecera HX-Trigger que manda el
+     endpoint sólo cuando el run se ha creado), así un aviso de error no borra
+     el vídeo ya seleccionado. #}
   <form class="bg-card border border-gray-700 rounded-2xl p-4 mb-6 flex flex-wrap gap-3 items-center"
         hx-post="/runs" hx-target="#run-list" hx-swap="afterbegin" hx-encoding="multipart/form-data"
-        hx-on::after-request="this.reset()">
+        hx-on:vbt-run-created="this.reset()">
     <input type="file" name="video" accept="video/*" required
            class="text-sm text-gray-300 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary file:text-white file:font-medium file:cursor-pointer hover:file:bg-blue-600 file:transition-colors cursor-pointer">
     <input type="text" name="name" placeholder="Run name" required
            class="bg-dark border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary transition-colors">
-    <input type="text" name="exercise" placeholder="Exercise (e.g. squat)"
-           class="bg-dark border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary transition-colors">
-    <input type="number" step="0.5" name="weight" placeholder="Weight (kg)"
+    <div class="w-44">
+      {% with select_id = "analyze-exercise" %}
+        {% include "partials/exercise_select.html" %}
+      {% endwith %}
+    </div>
+    <input type="number" step="0.5" min="0" name="weight" placeholder="Weight (kg)" required
            class="bg-dark border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary transition-colors w-32">
+
+    {# El hidden va ANTES del checkbox: si está marcado se envían los dos y el
+       último gana, si no se envía sólo "false". #}
+    <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none">
+      <input type="hidden" name="use_profile" value="false">
+      <input type="checkbox" name="use_profile" value="true" checked
+             class="w-4 h-4 accent-primary cursor-pointer">
+      Use profile
+    </label>
+
+    {# Un solo botón: el modal enseña el perfil guardado del ejercicio y deja
+       crear uno nuevo. hx-include le pasa el ejercicio de este formulario para
+       abrirlo ya seleccionado. #}
+    <button type="button"
+            class="border border-gray-600 hover:border-primary hover:text-white text-gray-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            hx-get="/profile/create_profile" hx-include="#analyze-exercise"
+            hx-target="#profile-modal-container" hx-swap="innerHTML">
+      Profile
+    </button>
     <button type="submit"
             class="bg-primary hover:bg-blue-600 text-white font-bold px-5 py-2 rounded-lg transition-all transform active:scale-[0.98] ml-auto">
       Analyze
@@ -33,4 +58,8 @@
     </main>
   </div>
 </div>
+
+{# Destinos de los swaps: avisos (out-of-band) y modal de perfil. #}
+<div id="toast" class="fixed bottom-6 right-6 z-50 w-96 max-w-[calc(100vw-3rem)] space-y-3"></div>
+<div id="profile-modal-container"></div>
 {% endblock %}

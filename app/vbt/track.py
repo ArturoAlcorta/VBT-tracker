@@ -28,6 +28,21 @@ def _circularity(pts: np.ndarray) -> float:
     return float(4.0 * np.pi * cv2.contourArea(p) / perimeter**2) if perimeter else 0.0
 
 
+def _resolve_device(device: str) -> str:
+    """CPU fallback when the requested device isn't there.
+
+    Ultralytics raises ValueError("Invalid CUDA 'device=0' requested") when
+    torch can't see a GPU, which is what happens in a container started
+    without the nvidia runtime -- better to run slower than to fail.
+    """
+    import torch
+
+    if device.strip().lower() not in ("cpu", "mps") and not torch.cuda.is_available():
+        print(f"WARNING device={device!r} not available (no CUDA device visible), falling back to cpu")
+        return "cpu"
+    return device
+
+
 def track_disk(
     video_path: Path,
     weights_path: Path,
@@ -42,6 +57,7 @@ def track_disk(
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     cap.release()
 
+    device = _resolve_device(device)
     model = YOLO(str(weights_path))
     # the one2one (NMS-free) head spreads confidence across neighboring anchors
     # and drops frames below threshold; one2many + NMS gives ~0.96 conf, 1 det/frame

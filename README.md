@@ -19,6 +19,7 @@ sensor or linear encoder required.
 
 - [Motivation](#motivation)
 - [Quick start](#quick-start)
+- [Interface](#interface)
 - [Velocity-based training](#velocity-based-training)
 - [How it works](#how-it-works)
 - [Dataset](#dataset)
@@ -68,6 +69,24 @@ status update live while it processes. By default the worker runs on CPU
 (`DEVICE=cpu`); set `DEVICE=0` in `.env` (and uncomment the GPU block in
 `docker-compose.yml`) if you have an NVIDIA GPU with the
 `nvidia-container-toolkit` installed.
+
+## Interface
+
+Upload a clip, name the run, pick the exercise and the weight. The run panel
+plots the plate's normalized height over time with every phase shaded
+(red: eccentric, green: concentric) and breaks each rep down in the table
+below. When the exercise has a velocity profile saved, the two tiles on top
+show the estimated **daily 1RM** and the **RIR of the last rep**.
+
+![Main page](imgs/main-page.png)
+
+The *Profile* button opens the velocity profile of the exercise selected in
+the form: the sets it was measured from, the exercise's cutoff speed, and the
+1RM where the load-velocity line crosses it. The same modal builds or replaces
+that profile — one video per set, each with its own weight, at least two
+clearly different loads.
+
+![Velocity profile](imgs/profile-modal.png)
 
 ## Velocity-based training
 
